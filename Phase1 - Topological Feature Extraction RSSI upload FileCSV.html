@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Topo-Kyber: Phase 1 Demo</title>
+<style>
+body { font-family: Arial, sans-serif; background:#f5f5f5; line-height: 1.6;}
+canvas { background:#fff; border:1px solid #ccc; border-radius: 4px; }
+section { margin:20px; }
+h2 { margin-bottom:10px; font-size: 1.1em; color: #333; }
+.panel { margin: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd; }
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+    <label for="csvUpload" style="font-size: 16px;"><b>📥 Tải dữ liệu RSSI (.csv): </b></label>
+    <input type="file" id="csvUpload" accept=".csv" style="margin-left: 10px;">
+    <p style="margin-top: 10px; color: #555; font-size: 14px;">
+        <i>Tải file alice_rssi.csv hoặc eva_rssi.csv để thấy sự khác biệt về Vector topo.</i>
+    </p>
+</div>
+
+<section>
+    <h2>1. Thu thập tín hiệu (Channel Probing)</h2>
+    <canvas id="rssiChart" width="600" height="150"></canvas>
+    <div style="font-size: 0.9em; color: #666;">Chuỗi tín hiệu 1 chiều (1D) ban đầu.</div>
+</section>
+
+<section>
+    <h2>2. Cấu trúc hóa Ma trận (State-space Reshaping)</h2>
+    <canvas id="matrixChart" width="600" height="120"></canvas>
+    <div style="font-size: 0.9em; color: #666;">Reshape 1D thành Ma trận 2D (Mỗi hàng là một vector trạng thái).</div>
+</section>
+
+<section>
+    <h2>3. Lọc Vietoris-Rips (Tính toán Betti-0 / H₀)</h2>
+    <label>Bán kính r:
+    <input type="range" id="rSlider" min="0" max="150" value="30">
+    </label>
+    <span id="rVal" style="font-weight: bold; color: #d32f2f;">0.30</span>
+    <br>
+    <canvas id="vr" width="300" height="300"></canvas>
+    <div style="font-size: 0.9em; color: #666;">Đồ thị liên kết dựa trên khoảng cách giữa các hàng của Ma trận.</div>
+</section>
+
+<section>
+    <h2>4. Trích xuất Đặc trưng & Tạo Seed</h2>
+    <div id="features" style="background: #e3f2fd; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 1.1em;">
+        <i>Đang chờ dữ liệu...</i>
+    </div>
+</section>
+
+<script>
+// Biến toàn cục
+let matrixRows = []; 
+let normData = [];
+
+document.getElementById('csvUpload').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        let rawRssi = e.target.result.split('\n').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+        if (rawRssi.length > 0) {
+            // Lấy 80 điểm dữ liệu để tạo ma trận 20x4
+            let windowData = rawRssi.slice(0, 80); 
+            updateAllDashboards(windowData);
+        } else {
+            alert("Dữ liệu không hợp lệ!");
+        }
+    };
+    reader.readAsText(file);
+});
+
+function updateAllDashboards(data) {
+    const minRssi = Math.min(...data);
+    const maxRssi = Math.max(...data);
+    const range = (maxRssi - minRssi) || 1;
+
+    // --- BƯỚC 1: VẼ RSSI 1D ---
+    const canvas = document.getElementById('rssiChart');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.beginPath(); ctx.strokeStyle = '#1976d2'; ctx.lineWidth = 2;
+    data.forEach((val, i) => {
+        const x = (i / (data.length - 1)) * canvas.width;
+        const y = canvas.height - 10 - ((val - minRssi) / range) * (canvas.height - 20);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // --- BƯỚC 2: STATE-SPACE RESHAPING (MA TRẬN) ---
+    // Chuẩn hóa dữ liệu về [0, 1]
+    normData = data.map(v => (v - minRssi) / range);
+    
+    // Reshape thành ma trận 20 hàng x 4 cột (thay cho 40x40 trong bài báo để web dễ hiển thị)
+    const numRows = 20; 
+    const numCols = 4;
+    matrixRows = [];
+    for(let i = 0; i < numRows; i++) {
+        matrixRows.push(normData.slice(i * numCols, (i + 1) * numCols));
+    }
+
+    // Vẽ Heatmap mô phỏng Ma trận
+    const mCanvas = document.getElementById('matrixChart');
+    const mCtx = mCanvas.getContext('2d');
+    mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+    
+    const cellW = mCanvas.width / numCols;
+    const cellH = mCanvas.height / numRows;
+    
+    for(let r = 0; r < numRows; r++) {
+        for(let c = 0; c < numCols; c++) {
+            let val = matrixRows[r][c] || 0;
+            // Map giá trị [0,1] sang thang màu Xanh -> Đỏ
+            let hue = (1 - val) * 240; 
+            mCtx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+            mCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
+            mCtx.strokeStyle = "rgba(255,255,255,0.2)";
+            mCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+    }
+
+    // --- BƯỚC 3 & 4: VIETORIS-RIPS & H0 ---
+    drawVR();
+}
+
+function distMultiDim(a, b) {
+    let sum = 0;
+    for(let i=0; i<a.length; i++) sum += Math.pow(a[i] - b[i], 2);
+    return Math.sqrt(sum);
+}
+
+const slider = document.getElementById("rSlider");
+slider.oninput = drawVR;
+
+function drawVR() {
+    if(matrixRows.length === 0) return;
+
+    const r = slider.value / 100;
+    document.getElementById("rVal").textContent = r.toFixed(2);
+    
+    const vrCanvas = document.getElementById("vr");
+    const vrCtx = vrCanvas.getContext("2d");
+    vrCtx.clearRect(0, 0, vrCanvas.width, vrCanvas.height);
+
+    const n = matrixRows.length;
+    const cx = vrCanvas.width / 2, cy = vrCanvas.height / 2, radius = 120;
+    
+    // Tọa độ 2D để vẽ (chỉ mang tính biểu diễn, khoảng cách thực tính trên N-chiều)
+    let points2D = [];
+    for(let i=0; i<n; i++) {
+        let angle = (i / n) * 2 * Math.PI;
+        points2D.push([cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)]);
+    }
+
+    // Tính cạnh và vẽ
+    let edges = [];
+    vrCtx.strokeStyle = "rgba(0, 0, 0, 0.3)";
+    for(let i=0; i<n; i++) {
+        for(let j=i+1; j<n; j++) {
+            let d = distMultiDim(matrixRows[i], matrixRows[j]);
+            if(d < r) {
+                edges.push([i, j, d]);
+                vrCtx.beginPath();
+                vrCtx.moveTo(points2D[i][0], points2D[i][1]);
+                vrCtx.lineTo(points2D[j][0], points2D[j][1]);
+                vrCtx.stroke();
+            }
+        }
+    }
+
+    // Vẽ đỉnh
+    vrCtx.fillStyle = "#d32f2f";
+    points2D.forEach(p => {
+        vrCtx.beginPath(); vrCtx.arc(p[0], p[1], 5, 0, 2*Math.PI); vrCtx.fill();
+    });
+
+    computeH0(edges, n);
+}
+
+function computeH0(edges, n) {
+    // Thuật toán Kruskal để tìm sự hợp nhất các thành phần (H0 - Betti 0)
+    let parent = Array(n).fill(0).map((_, i) => i);
+    function find(x) { return parent[x] == x ? x : parent[x] = find(parent[x]); }
+    function unite(a, b) { parent[find(b)] = find(a); }
+
+    edges.sort((a, b) => a[2] - b[2]);
+
+    let componentLifetimes = [];
+    edges.forEach(e => {
+        let [i, j, d] = e;
+        if(find(i) != find(j)) {
+            unite(i, j);
+            componentLifetimes.push(d); // Khoảng cách d chính là 'thời điểm chết' của 1 component
+        }
+    });
+
+    // L0 là tổng tuổi thọ của các thành phần Betti-0
+    let L0 = componentLifetimes.reduce((a, b) => a + b, 0);
+    
+    // Căn bản: Lấy L0 nhân hệ số và làm tròn để mô phỏng "Phép làm tròn" tạo Hạt giống
+    let simulatedSeed = Math.floor(L0 * 10000).toString(16).toUpperCase();
+
+    document.getElementById("features").innerHTML =
+        `<b>[+] Vector đặc trưng (v):</b><br>
+         Tổng độ bền Betti-0 (L₀) = <span style="color:#d32f2f">${L0.toFixed(4)}</span><br><br>
+         <b>[+] Sinh hạt giống (Seed s):</b><br>
+         <i>(Mô phỏng: L₀ -> Làm tròn kết hợp phần dư -> Hex)</i><br>
+         Seed sinh ra: <span style="color:#1976d2; font-weight:bold;">0x${simulatedSeed}</span>`;
+}
+
+// Khởi tạo mặc định
+updateAllDashboards([-60, -59, -61, -63, -58, -57, -60, -62, -61, -59, -58, -60, -64, -62, -59, -58, -61, -60, -59, -57, -60, -62, -61, -59, -58, -60, -61, -59, -58, -60]);
+
+</script>
+</body>
+</html>

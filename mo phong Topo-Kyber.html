@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Topo-Kyber: Mô phỏng Persistent Homology (Động)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 20px; padding: 25px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        h1 { text-align: center; color: #4a5568; margin-bottom: 10px; font-size: 2.2em; }
+        .subtitle { text-align: center; color: #718096; margin-bottom: 30px; font-style: italic; }
+        .workflow { display: flex; justify-content: space-between; margin-bottom: 40px; background: #f7fafc; padding: 15px; border-radius: 10px; flex-wrap: wrap; }
+        .step { flex: 1; text-align: center; padding: 10px; min-width: 120px; }
+        .step-number { width: 35px; height: 35px; background: #4299e1; color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-bottom: 10px; }
+        .step.active .step-number { background: #f6ad55; transform: scale(1.1); box-shadow: 0 0 15px rgba(246, 173, 85, 0.5); }
+        .step-name { font-size: 0.9em; color: #4a5568; font-weight: 500; }
+        
+        .main-panel { display: flex; flex-direction: column; gap: 25px; margin-bottom: 25px; }
+        .visualization-panel { background: #f8f9fa; border-radius: 15px; padding: 20px; border: 1px solid #e2e8f0; }
+        .data-panel { background: #f8f9fa; border-radius: 15px; padding: 20px; border: 1px solid #e2e8f0; }
+        
+        .canvas-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0; }
+        .canvas-wrapper { text-align: center; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        canvas { display: block; margin: 10px auto 0; background: white; cursor: pointer; max-width: 100%; height: auto; }
+        
+        .controls { display: flex; gap: 15px; margin: 20px 0; flex-wrap: wrap; justify-content: center; align-items: center;}
+        button { padding: 12px 25px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; font-size: 1em; }
+        .btn-primary { background: #4299e1; color: white; }
+        .btn-primary:hover { background: #3182ce; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(66, 153, 225, 0.4); }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-success:hover { background: #38a169; transform: translateY(-2px); }
+        .btn-warning { background: #ed8936; color: white; }
+        .btn-danger { background: #f56565; color: white; }
+        .slider-container { flex: 1; min-width: 250px; padding: 0 15px; }
+        .slider-label { display: flex; justify-content: space-between; margin-bottom: 8px; color: #4a5568; font-weight: 500; }
+        input[type=range] { width: 100%; height: 8px; border-radius: 4px; background: #e2e8f0; outline: none; -webkit-appearance: none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; background: #4299e1; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid; }
+        .stat-card.alice { border-left-color: #4299e1; }
+        .stat-card.bob { border-left-color: #48bb78; }
+        .stat-card.eve { border-left-color: #f56565; }
+        .stat-title { font-size: 0.9em; color: #718096; margin-bottom: 5px; font-weight: 500; }
+        .stat-value { font-size: 1.5em; font-weight: bold; color: #2d3748; }
+        .stat-detail { font-size: 0.8em; color: #a0aec0; margin-top: 5px; }
+        
+        .barcode-container { margin-top: 20px; padding: 15px; background: white; border-radius: 10px; }
+        .barcode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .barcode-col h5 { text-align: center; margin-bottom: 10px; color: #4a5568; }
+        .barcode { height: 20px; border-radius: 5px; margin: 3px 0; transition: width 0.3s ease; }
+        
+        .legend { display: flex; gap: 20px; margin-top: 15px; font-size: 0.9em; flex-wrap: wrap; justify-content: center; }
+        .legend-item { display: flex; align-items: center; gap: 8px; }
+        .legend-color { width: 20px; height: 20px; border-radius: 4px; }
+        
+        .table-container { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; }
+        th { background: #4299e1; color: white; padding: 12px; font-weight: 500; }
+        td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+        tr:hover { background: #f7fafc; }
+        
+        .alert { padding: 15px; border-radius: 10px; margin: 20px 0; display: none; text-align: center; }
+        .alert-danger { background: #fed7d7; color: #c53030; border: 1px solid #fc8181; display: block; }
+        .alert-success { background: #c6f6d5; color: #276749; border: 1px solid #9ae6b4; display: block; }
+        .alert-warning { background: #feebc8; color: #c05621; border: 1px solid #fbd38d; display: block; }
+        
+        .threshold-slider { margin: 15px 0; padding: 15px; background: #f7fafc; border-radius: 10px; }
+        .tooltip { position: relative; display: inline-block; cursor: help; }
+        .tooltip .tooltiptext { visibility: hidden; width: 200px; background: #2d3748; color: white; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -100px; opacity: 0; transition: opacity 0.3s; font-size: 0.85em; }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+        
+        .upload-btn-wrapper { position: relative; overflow: hidden; display: inline-block; }
+        .upload-btn-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
+        
+        @media (max-width: 900px) { 
+            .canvas-grid { grid-template-columns: 1fr; } 
+            .barcode-grid { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: 1fr; } 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 Topo-Kyber: TDA & QIM Simulation</h1>
+        <div class="subtitle">Mô phỏng động trích xuất đặc trưng Topo (Betti-0) từ RSSI và Lượng tử hóa sinh Khóa</div>
+        
+        <div class="workflow" id="workflow">
+            <div class="step" data-step="1"><div class="step-number">1</div><div class="step-name">RSSI Collection</div></div>
+            <div class="step" data-step="2"><div class="step-number">2</div><div class="step-name">State-Space Reshape</div></div>
+            <div class="step" data-step="3"><div class="step-number">3</div><div class="step-name">Vietoris-Rips</div></div>
+            <div class="step" data-step="4"><div class="step-number">4</div><div class="step-name">Betti-0 (H₀)</div></div>
+            <div class="step" data-step="5"><div class="step-number">5</div><div class="step-name">QIM & Seed</div></div>
+        </div>
+        
+        <div class="main-panel">
+            <div class="visualization-panel">
+                <h3 style="margin-bottom: 15px; color: #2d3748; text-align: center;">📊 Simultaneous Filtration Process</h3>
+                
+                <div class="canvas-grid">
+                    <div class="canvas-wrapper" style="border-top: 4px solid #4299e1;">
+                        <h4 style="color: #4299e1;">📍 Alice (Initiator)</h4>
+                        <canvas id="canvasAlice" width="300" height="300"></canvas>
+                    </div>
+                    <div class="canvas-wrapper" style="border-top: 4px solid #48bb78;">
+                        <h4 style="color: #48bb78;">📍 Bob (Responder)</h4>
+                        <canvas id="canvasBob" width="300" height="300"></canvas>
+                    </div>
+                    <div class="canvas-wrapper" style="border-top: 4px solid #f56565;">
+                        <h4 style="color: #f56565;">📍 Eve (Eavesdropper)</h4>
+                        <canvas id="canvasEve" width="300" height="300"></canvas>
+                    </div>
+                </div>
+                
+                <div class="controls">
+                    <div class="slider-container">
+                        <div class="slider-label">
+                            <span>Filtration Radius (r): <span id="radiusValue">0.00</span></span>
+                            <span class="tooltip">ⓘ
+                                <span class="tooltiptext">Bán kính quét để nối các Vector trạng thái trong không gian N-chiều</span>
+                            </span>
+                        </div>
+                        <input type="range" id="radiusSlider" min="0" max="1" step="0.01" value="0">
+                    </div>
+                </div>
+                
+                <div class="controls" style="background: #e2e8f0; padding: 10px; border-radius: 10px;">
+                    <div class="upload-btn-wrapper">
+                        <button class="btn-primary" style="background: #2b6cb0;">📥 Upload 3 CSV files</button>
+                        <input type="file" id="csvUpload" accept=".csv" multiple title="Chọn cùng lúc alice_rssi.csv, bob_rssi.csv, eva_rssi.csv" />
+                    </div>
+                    <button class="btn-success" onclick="regenerateAllChannels()">🔄 Default Data</button>
+                    <button class="btn-primary" onclick="animateFiltration()">▶ Animate VR (All)</button>
+                </div>
+                
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-color" style="background: #2d3748;"></div><span>State Vector (Đỉnh tham chiếu & Hàng Ma trận)</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: #4299e1;"></div><span>Liên kết Alice</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: #48bb78;"></div><span>Liên kết Bob</span></div>
+                    <div class="legend-item"><div class="legend-color" style="background: #f56565;"></div><span>Liên kết Eve</span></div>
+                </div>
+            </div>
+            
+            <div class="data-panel">
+                <h3 style="margin-bottom: 15px; color: #2d3748; text-align: center;">📈 Persistence & QIM Features</h3>
+                
+                <div class="threshold-slider">
+                    <div class="slider-label">
+                        <span>Quantization Step (Δ): <span id="deltaValue">1.5</span></span>
+                        <span class="tooltip">ⓘ<span class="tooltiptext">Bước lượng tử hóa QIM. Quyết định khả năng sửa lỗi mà không cần BCH code.</span></span>
+                    </div>
+                    <input type="range" id="deltaSlider" min="0.1" max="5.0" step="0.1" value="1.5">
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card alice">
+                        <div class="stat-title">Alice's Root</div>
+                        <div class="stat-value" id="aliceTau0">0.00</div>
+                        <div class="stat-detail">Betti-0 (L₀)</div>
+                        <div class="stat-detail" style="color: #2b6cb0; font-weight: bold;">Seed: <span id="aliceSecret">0x...</span></div>
+                    </div>
+                    <div class="stat-card bob">
+                        <div class="stat-title">Bob's Root</div>
+                        <div class="stat-value" id="bobTau0">0.00</div>
+                        <div class="stat-detail">Betti-0 (L₀)</div>
+                        <div class="stat-detail" style="color: #276749; font-weight: bold;">Seed: <span id="bobSecret">0x...</span></div>
+                    </div>
+                    <div class="stat-card eve">
+                        <div class="stat-title">Eve's Root</div>
+                        <div class="stat-value" id="eveTau0">0.00</div>
+                        <div class="stat-detail">Betti-0 (L₀)</div>
+                        <div class="stat-detail" style="color: #c53030; font-weight: bold;">Seed: <span id="eveSecret">0x...</span></div>
+                    </div>
+                </div>
+                
+                <div id="mitmAlert"></div>
+                
+                <div class="barcode-container">
+                    <h4 style="margin-bottom: 10px; text-align: center;">🧬 Persistence Barcode (Betti-0 Components)</h4>
+                    <div class="barcode-grid">
+                        <div class="barcode-col">
+                            <h5>Alice</h5>
+                            <div id="barcodeAlice" style="min-height: 60px; max-height: 150px; overflow-y: auto;"></div>
+                        </div>
+                        <div class="barcode-col">
+                            <h5>Bob</h5>
+                            <div id="barcodeBob" style="min-height: 60px; max-height: 150px; overflow-y: auto;"></div>
+                        </div>
+                        <div class="barcode-col">
+                            <h5>Eve</h5>
+                            <div id="barcodeEve" style="min-height: 60px; max-height: 150px; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Thông số</th>
+                                <th>Alice (Gửi)</th>
+                                <th>Bob (Nhận)</th>
+                                <th>Eve (Nghe lén)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Betti-0 ($L_0$)</strong></td>
+                                <td id="tableAliceTau">0.00</td>
+                                <td id="tableBobTau">0.00</td>
+                                <td id="tableEveTau">0.00</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Quantized (K_raw)</strong></td>
+                                <td id="tableAliceK">0</td>
+                                <td id="tableBobK">0</td>
+                                <td id="tableEveK">0</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Helper Data (h)</strong></td>
+                                <td id="tableAliceH">0.00</td>
+                                <td colspan="2" style="font-size: 0.85em; color: #718096;">(Bob/Eve dùng $h$ của Alice để Reconciliation)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status</strong></td>
+                                <td style="color: #48bb78;" id="aliceStatus">-</td>
+                                <td style="color: #48bb78;" id="bobStatus">✅ Match</td>
+                                <td style="color: #f56565;" id="eveStatus">❌ Mismatch</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 20px; background: #f7fafc; border-radius: 15px;">
+            <h4 style="color: #2d3748; margin-bottom: 15px;">📋 System Log</h4>
+            <div id="attackLog" style="background: #1a202c; color: #a0aec0; padding: 15px; border-radius: 10px; font-family: monospace; height: 100px; overflow-y: auto;">
+                [System] Khởi tạo hệ thống Topo-Kyber (Đã kích hoạt Anchor Point và Global Normalization)<br>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let channels = {
+            alice: { rssi: [], matrix: [], persistence: { h0: [] }, l0: 0, k_raw: 0, h: 0, seed: '' },
+            bob:   { rssi: [], matrix: [], persistence: { h0: [] }, l0: 0, k_raw: 0, h: 0, seed: '' },
+            eve:   { rssi: [], matrix: [], persistence: { h0: [] }, l0: 0, k_raw: 0, h: 0, seed: '' }
+        };
+        
+        let currentRadius = 0;
+        let animationInterval = null;
+        let globalDelta = 1.5; 
+        
+        function init() {
+            const defaultAlice = [-84, -84, -83, -84, -84, -84, -84, -84, -85, -84, -89, -84, -84, -85, -84, -85];
+            const defaultBob   = [-83, -86, -85, -85, -85, -83, -85, -81, -85, -85, -85, -85, -84, -86, -84, -85];
+            const defaultEve   = [-62, -62, -56, -63, -63, -62, -63, -63, -63, -63, -62, -63, -62, -63, -63, -63];
+            
+            processChannelData('alice', defaultAlice);
+            processChannelData('bob', defaultBob);
+            processChannelData('eve', defaultEve);
+            
+            updateAllDisplays();
+            drawAll();
+            setupEventListeners();
+            updateStep(1);
+        }
+
+        document.getElementById('csvUpload').addEventListener('change', async function(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+
+            addLogEntry('System', `Đang xử lý ${files.length} file CSV...`);
+
+            for (let i = 0; i < files.length; i++) {
+                let file = files[i];
+                let targetChannel = 'alice'; 
+                let fileName = file.name.toLowerCase();
+
+                // KHẮC PHỤC LỖI KHÔNG NHẬN ĐƯỢC FILE EVA
+                if (fileName.includes('bob')) {
+                    targetChannel = 'bob';
+                } else if (fileName.includes('eve') || fileName.includes('eva')) {
+                    targetChannel = 'eve';
+                }
+
+                const text = await file.text();
+                let rawRssi = text.split('\n').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+                
+                if (rawRssi.length > 0) {
+                    let takeCount = Math.min(rawRssi.length, 40); 
+                    let windowData = rawRssi.slice(0, takeCount); 
+                    
+                    processChannelData(targetChannel, windowData);
+                    addLogEntry('System', `✅ Đã nạp thành công dữ liệu cho ${targetChannel.toUpperCase()} (${takeCount} điểm)`);
+                }
+            }
+
+            currentRadius = 0;
+            document.getElementById('radiusSlider').value = 0;
+            document.getElementById('radiusValue').textContent = "0.00";
+            
+            updateAllDisplays();
+            drawAll();
+        });
+        
+        function processChannelData(channel, rssiArray) {
+            channels[channel].rssi = rssiArray;
+
+            // BẢN VÁ LỖI 1: CHUẨN HÓA TOÀN CỤC (GLOBAL NORMALIZATION)
+            // Cố định biên độ vật lý để không làm méo lưới tín hiệu khi có nhiễu (outlier)
+            const FIXED_MIN = -100;
+            const FIXED_MAX = -40;
+            const range = FIXED_MAX - FIXED_MIN;
+
+            const normRssi = rssiArray.map(v => {
+                let val = Math.max(FIXED_MIN, Math.min(FIXED_MAX, v)); 
+                return (val - FIXED_MIN) / range;
+            });
+
+            const numCols = 4;
+            const numRows = Math.floor(normRssi.length / numCols);
+            const matrix = [];
+            
+            // BẢN VÁ LỖI 2: NEO TỌA ĐỘ (ORIGIN ANCHORING)
+            // Thêm mốc [0,0,0,0] để Betti-0 đo lường được khoảng cách không gian vật lý thật sự 
+            // Điều này là chìa khóa chặn đứng Eva dù tín hiệu cô ấy có ổn định cách mấy
+            matrix.push(Array(numCols).fill(0));
+
+            for(let i = 0; i < numRows; i++) {
+                matrix.push(normRssi.slice(i * numCols, (i + 1) * numCols));
+            }
+            channels[channel].matrix = matrix;
+
+            const n = matrix.length;
+            const edges = [];
+            for(let i=0; i<n; i++) {
+                for(let j=i+1; j<n; j++) {
+                    let sumSq = 0;
+                    for(let k=0; k<numCols; k++) {
+                        sumSq += Math.pow(matrix[i][k] - matrix[j][k], 2);
+                    }
+                    edges.push({ i, j, d: Math.sqrt(sumSq) });
+                }
+            }
+            edges.sort((a, b) => a.d - b.d);
+
+            let parent = Array(n).fill(0).map((_, i) => i);
+            function find(x) { return parent[x] == x ? x : parent[x] = find(parent[x]); }
+            function unite(a, b) { parent[find(b)] = find(a); }
+
+            const h0Lifespans = [];
+            edges.forEach(e => {
+                if(find(e.i) != find(e.j)) {
+                    unite(e.i, e.j);
+                    h0Lifespans.push(e.d);
+                }
+            });
+
+            channels[channel].persistence.h0 = h0Lifespans;
+            // Nhân tỷ lệ lên 10 để số Betti-0 không bị quá lẻ
+            channels[channel].l0 = h0Lifespans.reduce((a, b) => a + b, 0) * 10; 
+
+            applyQIM(); 
+        }
+
+        function applyQIM() {
+            globalDelta = parseFloat(document.getElementById('deltaSlider').value);
+            
+            let a_L0 = channels.alice.l0;
+            channels.alice.k_raw = Math.round(a_L0 / globalDelta);
+            channels.alice.h = a_L0 - (channels.alice.k_raw * globalDelta);
+            channels.alice.seed = "0x" + (channels.alice.k_raw * 987654).toString(16).toUpperCase().padStart(4, '0');
+
+            let b_L0 = channels.bob.l0;
+            channels.bob.k_raw = Math.round((b_L0 - channels.alice.h) / globalDelta);
+            channels.bob.seed = "0x" + (channels.bob.k_raw * 987654).toString(16).toUpperCase().padStart(4, '0');
+
+            let e_L0 = channels.eve.l0;
+            channels.eve.k_raw = Math.round((e_L0 - channels.alice.h) / globalDelta);
+            channels.eve.seed = "0x" + (channels.eve.k_raw * 987654).toString(16).toUpperCase().padStart(4, '0');
+        }
+        
+        function setupEventListeners() {
+            document.getElementById('radiusSlider').addEventListener('input', function(e) {
+                currentRadius = parseFloat(e.target.value);
+                document.getElementById('radiusValue').textContent = currentRadius.toFixed(2);
+                drawAll();
+                updateStep(3);
+            });
+            
+            document.getElementById('deltaSlider').addEventListener('input', function(e) {
+                document.getElementById('deltaValue').textContent = parseFloat(e.target.value).toFixed(1);
+                applyQIM();
+                updateAllDisplays();
+                addLogEntry('System', `Đã đổi bước lượng tử hóa QIM Δ = ${e.target.value}`);
+            });
+        }
+        
+        function regenerateAllChannels() {
+            init(); 
+            addLogEntry('System', 'Đã Reset dữ liệu mô phỏng về mặc định.');
+        }
+        
+        function updateAllDisplays() {
+            document.getElementById('aliceTau0').textContent = channels.alice.l0.toFixed(2);
+            document.getElementById('bobTau0').textContent = channels.bob.l0.toFixed(2);
+            document.getElementById('eveTau0').textContent = channels.eve.l0.toFixed(2);
+            
+            document.getElementById('aliceSecret').textContent = channels.alice.seed;
+            document.getElementById('bobSecret').textContent = channels.bob.seed;
+            document.getElementById('eveSecret').textContent = channels.eve.seed;
+            
+            document.getElementById('tableAliceTau').textContent = channels.alice.l0.toFixed(2);
+            document.getElementById('tableBobTau').textContent = channels.bob.l0.toFixed(2);
+            document.getElementById('tableEveTau').textContent = channels.eve.l0.toFixed(2);
+            
+            document.getElementById('tableAliceK').textContent = channels.alice.k_raw;
+            document.getElementById('tableBobK').textContent = channels.bob.k_raw;
+            document.getElementById('tableEveK').textContent = channels.eve.k_raw;
+
+            document.getElementById('tableAliceH').textContent = channels.alice.h.toFixed(2);
+            
+            let bobMatch = (channels.bob.k_raw === channels.alice.k_raw);
+            let eveMatch = (channels.eve.k_raw === channels.alice.k_raw);
+
+            document.getElementById('bobStatus').innerHTML = bobMatch ? '✅ Match' : '❌ Failed';
+            document.getElementById('bobStatus').style.color = bobMatch ? '#48bb78' : '#f56565';
+            
+            document.getElementById('eveStatus').innerHTML = eveMatch ? '⚠️ Broken!' : '❌ Reject';
+            document.getElementById('eveStatus').style.color = eveMatch ? '#f56565' : '#48bb78'; 
+            
+            checkMITM(bobMatch, eveMatch);
+            updateBarcodes();
+        }
+        
+        function checkMITM(bobMatch, eveMatch) {
+            const alertDiv = document.getElementById('mitmAlert');
+            if (eveMatch) {
+                alertDiv.className = 'alert alert-danger';
+                alertDiv.innerHTML = `<strong>🚨 CẢNH BÁO BẢO MẬT!</strong><br>Bước Lượng tử hóa (Δ) quá lớn khiến Eve có thể khôi phục Seed.<br><small>Hãy giảm Δ trên thanh trượt để loại bỏ Eve.</small>`;
+            } else if (!bobMatch) {
+                alertDiv.className = 'alert alert-warning';
+                alertDiv.innerHTML = `<strong>⚠️ LỖI ĐỒNG BỘ BOB!</strong><br>Nhiễu kênh quá lớn so với bước Δ, Bob không thể khôi phục Seed.<br><small>Hãy tăng Δ để Bob có thể bắt kịp Alice.</small>`;
+            } else {
+                alertDiv.className = 'alert alert-success';
+                alertDiv.innerHTML = `<strong>✅ Kênh thiết lập an toàn</strong><br>Bob đã đồng bộ Seed thành công, loại bỏ hoàn toàn Eve.`;
+            }
+        }
+        
+        function updateBarcodes() {
+            ['alice', 'bob', 'eve'].forEach(ch => {
+                const persistence = channels[ch].persistence;
+                const barcodeContainer = document.getElementById(`barcode${ch.charAt(0).toUpperCase() + ch.slice(1)}`);
+                barcodeContainer.innerHTML = '';
+                
+                const sortedH0 = [...persistence.h0].sort((a, b) => b - a);
+                const maxLifespan = Math.max(0.5, ...sortedH0); 
+                
+                sortedH0.forEach(lifespan => {
+                    const bar = document.createElement('div');
+                    bar.className = 'barcode';
+                    bar.style.width = `${(lifespan / maxLifespan) * 100}%`;
+                    bar.style.background = ch === 'alice' ? '#4299e1' : (ch === 'bob' ? '#48bb78' : '#f56565');
+                    bar.style.height = '10px';
+                    bar.style.margin = '2px 0';
+                    bar.title = `Khoảng cách: ${lifespan.toFixed(2)}`;
+                    barcodeContainer.appendChild(bar);
+                });
+            });
+        }
+        
+        function addLogEntry(type, message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('attackLog');
+            let color = '#a0aec0';
+            if (type === 'Attack') color = '#f56565';
+            if (type === 'System') color = '#4299e1';
+            logDiv.innerHTML = `[${timestamp}] <span style="color: ${color}">${type}</span>: ${message}<br>` + logDiv.innerHTML;
+        }
+
+        function drawAll() {
+            drawChannel('alice', 'canvasAlice', '#4299e1');
+            drawChannel('bob', 'canvasBob', '#48bb78');
+            drawChannel('eve', 'canvasEve', '#f56565');
+        }
+        
+        function drawChannel(channelKey, canvasId, colorHex) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const matrix = channels[channelKey].matrix;
+            if(!matrix || matrix.length === 0) return;
+
+            const n = matrix.length;
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const drawRadius = 110; 
+
+            let points2D = [];
+            for(let i=0; i<n; i++) {
+                let angle = (i / n) * 2 * Math.PI;
+                // Điểm 0 (Đỉnh Neo) luôn nằm ở vị trí trung tâm hoặc góc cố định, ta để trên vòng tròn luôn cho đẹp
+                points2D.push({ x: cx + drawRadius * Math.cos(angle), y: cy + drawRadius * Math.sin(angle), label: i===0 ? 'Root' : `v${i}` });
+            }
+            
+            ctx.strokeStyle = colorHex;
+            ctx.lineWidth = 1.5;
+            
+            for (let i = 0; i < n; i++) {
+                for (let j = i+1; j < n; j++) {
+                    let sumSq = 0;
+                    for(let k=0; k<matrix[i].length; k++) {
+                        sumSq += Math.pow(matrix[i][k] - matrix[j][k], 2);
+                    }
+                    let d = Math.sqrt(sumSq);
+
+                    if (d <= currentRadius) {
+                        ctx.beginPath();
+                        ctx.moveTo(points2D[i].x, points2D[i].y);
+                        ctx.lineTo(points2D[j].x, points2D[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+            
+            points2D.forEach((p, index) => {
+                ctx.fillStyle = index === 0 ? '#f6ad55' : '#2d3748'; // Tô màu vàng nổi bật cho mốc Reference Root
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, index===0 ? 6 : 4, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+        
+        function updateStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.querySelector(`.step[data-step="${step}"]`).classList.add('active');
+        }
+        
+        function animateFiltration() {
+            if (animationInterval) { clearInterval(animationInterval); animationInterval = null; }
+            let r = 0;
+            const maxR = 1.0; 
+            const step = 0.02;
+            
+            animationInterval = setInterval(() => {
+                r += step;
+                if (r > maxR) { clearInterval(animationInterval); animationInterval = null; return; }
+                currentRadius = r;
+                document.getElementById('radiusSlider').value = r;
+                document.getElementById('radiusValue').textContent = r.toFixed(2);
+                
+                drawAll(); 
+                
+                if (r < 0.2) updateStep(2);
+                else if (r < 0.8) updateStep(3);
+                else updateStep(4);
+            }, 50);
+        }
+        
+        init();
+    </script>
+</body>
+</html>
